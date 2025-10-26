@@ -1,110 +1,86 @@
-"""
-Бот, который отвечает на сообщения в Telegram.
-Сначала определяются несколько функций-обработчиков.
-Затем эти функции передаются в приложение и регистрируются в соответствующих местах.
-После этого бот запускается и работает до тех пор, пока вы не нажмете Ctrl-C в командной строке.
-"""
-
-import logging
-from logging.handlers import RotatingFileHandler
 import os
+import logging
+from dotenv import load_dotenv
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
-# Настройка логирования: файл + вывод в консоль
-log_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-log_dir = os.path.join(os.path.dirname(__file__), "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "bot.log")
+# Загружаем переменные из .env (если есть)
+load_dotenv()
 
-file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
-file_handler.setFormatter(log_formatter)
-file_handler.setLevel(logging.DEBUG)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # ключ OpenAI
 
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(log_formatter)
-stream_handler.setLevel(logging.INFO)
-
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
-# Удаляем возможные хендлеры, чтобы не дублировать вывод при повторном импорте
-if root_logger.handlers:
-    root_logger.handlers.clear()
-root_logger.addHandler(file_handler)
-root_logger.addHandler(stream_handler)
-
+# Логирование
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
 logger = logging.getLogger(__name__)
 
-# Запрещаем propagate, чтобы сообщения не шли в root и не писались другими глобальными хендлерами
-logger.propagate = False
+# Инициализация OpenAI SDK (новая библиотека openai>=1.x)
+client = None
+if OPENAI_API_KEY:
+    try:
+        from openai import OpenAI  # pip install openai>=1.0.0
+        client = OpenAI(api_key=OPENAI_API_KEY)
+    except Exception as e:
+        logger.error("Не удалось инициализировать OpenAI SDK: %s", e)
+else:
+    logger.warning("OPENAI_API_KEY не задан. Будет использоваться фолбэк-ответ.")
 
-# Отключаем детальные логи библиотеки httpx
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# ====== handlers ======
 
-
-from telegram import ForceReply, Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
-
-from model import chat_with_llm
-
-import dotenv
-# Загружаем переменные окружения из файла .env
-try:
-    env = dotenv.dotenv_values(".env")
-    TELEGRAM_BOT_TOKEN = env["TELEGRAM_BOT_TOKEN"]
-except FileNotFoundError:
-    raise FileNotFoundError("Файл .env не найден. Убедитесь, что он существует в корневой директории проекта.")
-except KeyError as e:
-    raise KeyError(f"Переменная окружения {str(e)} не найдена в файле .env. Проверьте его содержимое.")
-
-
-# Определим команды и функции-обработчики сообщений
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик команды /start. При старте бота пользователь получает приветственное сообщение."""
-    user = update.effective_user
-    await update.message.reply_html(
-        rf"Hi {user.mention_html()}!",
-        reply_markup=ForceReply(selective=True),
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Привет! Я Telegram-бот на OpenAI. Напиши сообщение — попробую ответить 😉"
     )
 
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Команды: /start, /help\n"
+        "Просто отправьте текстовое сообщение, я отвечу при помощи OpenAI."
+    )
 
-async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Основная функция для обработки текстовых сообщений от пользователя с целью ответа на них с помощью AI."""
-    user_message = update.message.text
-    user = update.effective_user.first_name     
-    user_message = f'{user_message}. Имя пользователя: {user}'
-    # Получаем историю сообщений из context.chat_data
-    history = context.chat_data.get("history", [])
-    logger.debug(f"History: {history}")
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text or ""
+    reply_text = None
 
-    # Передаем текущий запрос и историю сообщений в llm_service
-    llm_response = chat_with_llm(user_message, history=history)
-    context.chat_data["history"] = history  # сохраняем обновленную историю
-    await update.message.reply_text(llm_response)
+    if client is not None:
+        try:
+            # Модель можно заменить при желании на gpt-4.1, gpt-4o, gpt-4o-mini и т.д.
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0.7,
+                messages=[
+                    {"role": "system", "content": "Ты дружелюбный, краткий и полезный ассистент."},
+                    {"role": "user", "content": user_text},
+                ],
+            )
+            reply_text = completion.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error("Ошибка обращения к OpenAI API: %s", e)
 
+    if not reply_text:
+        # Фолбэк — если нет ключа/ошибка OpenAI:
+        reply_text = (
+            f"Вы написали: {user_text}\n"
+            "(⚠️ OpenAI-ответ недоступен — проверьте OPENAI_API_KEY)"
+        )
 
-def main() -> None:
-    """Функция инициализации бот-приложения."""
-    # Создание основного объекта приложения Telegram API
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    await update.message.reply_text(reply_text)
 
-    # Обработчик всех текстовых сообщений без команды
-    chat_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, chat)  
+def main():
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("Не задан TELEGRAM_BOT_TOKEN в .env или переменных окружения.")
 
-    # Регистрируем обработчики:
-    # Команда /start
-    application.add_handler(CommandHandler("start", start))
-    # Все остальные текстовые сообщения обрабатываются chat_handler
-    application.add_handler(chat_handler)
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Запуск бота в режиме постоянного ожидания команд.
-    # Бот работает до прекращения программы (нажатие Ctrl-C или завершение по другому сигналу)
-    application.run_polling(allowed_updates=Update.ALL_TYPES)  
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    logger.info("Бот запущен (OpenAI). Нажмите Ctrl+C для остановки.")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
