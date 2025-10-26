@@ -1,59 +1,41 @@
-# Python Telegram AI Bot
+# Telegram LLM Bot (OpenAI)
 
-Telegram-бот - консультант по тарифам домашнего интернета. 
-Он использует языковую модель YandexGPT, доступ к ней осуществляется по API. 
-Бот написан на Python и использует библиотеку `python-telegram-bot` для работы с Telegram API.
+Бот на Python (`python-telegram-bot` v20+) с интеграцией OpenAI.
 
-## Инструкции по установке
+## Быстрый старт (локально или в Codespaces)
 
-### 1. Скачайте и распакуйте файлы проекта, откройте папку в VsCode.  
-Или используйте консоль для клонирования репозитория:
-```
-git clone https://github.com/labintsev/python-telegram-ai-bot.git
-cd python-telegram-ai-bot
-```
-
-### 2. Создайте виртуальное окружение
-Виртуальное окружение помогает изолировать зависимости проекта.
-```bash
-python -m venv venv
-```
-Активация:
-- На Windows:
-  ```bash
-  venv\Scripts\activate
-  ```
-- На macOS/Linux:
-  ```bash
-  source venv/bin/activate
-  ```
-
-## 3. Установите зависимости
-Можно сразу установить галочку на файле `requirements.txt` при создании виртуального окружения в VsCode.  
-Или установите все необходимые библиотеки через терминал:
-```bash
-pip install -r requirements.txt
-```
-
-## 4. Настройка переменных окружения
-Создайте файл `.env` в корневой папке проекта и добавьте туда ваши ключи:
-```
+1. Создайте `.env` по образцу `.env.example`:
 TELEGRAM_BOT_TOKEN=ваш_токен_бота
-YA_API_KEY=ваш_яндекс_api_key
-YA_FOLDER_ID=ваш_каталог_яндекс_консоли  
-```
-- TELEGRAM_BOT_TOKEN — получите в @BotFather в Telegram.
-- YA_API_KEY — получите на сервисе, который используется для ИИ (например, YandexGPT).
-- YA_FOLDER_ID - скопируйте из яндекс консоли.
+OPENAI_API_KEY=ваш_openai_api_key
 
-## 5. Запуск бота
-Запустите бота командой:
+r
+Копировать код
+
+2. Установите зависимости и запустите:
 ```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .\venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
 python bot.py
-```
-Если всё настроено верно, бот начнет работать и принимать сообщения в Telegram.
+В репозитории лежит Yandex-версия (наследие). Этот файл описывает конфигурацию OpenAI. При желании можно полностью мигрировать на OpenAI, удалив Yandex-зависимости.
 
-## 6. Внесение изменений и помощь проекту
-- Если хотите внести свой вклад, создайте issue (обсуждение проблемы) или отправьте pull request (предложение изменений).
-- Если возникнут вопросы — пишите в ТГ-канал в ветку Вопросы к преподавателю.
-- Если вам нужно подробнее расписать какой-то конкретный этап (например, получение токена или работу с AI), уточните, и я добавлю подробности!
+yaml
+Копировать код
+
+---
+
+## Утилиты (опционально)
+
+### `setup.sh`
+```bash
+#!/usr/bin/env bash
+set -e
+python -m venv .venv
+if [ -f ".venv/bin/activate" ]; then
+  source .venv/bin/activate
+fi
+pip install --upgrade pip
+pip install -r requirements.txt
+echo
+echo "✅ Готово. Запуск: python bot.py"
